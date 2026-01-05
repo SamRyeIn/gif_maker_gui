@@ -1,0 +1,6 @@
+.DS_Store
+dev/
+*.gif
+palette.png
+__pycache__/
+*.pyc
