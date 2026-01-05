@@ -4,3 +4,9 @@ dev/
 palette.png
 __pycache__/
 *.pyc
+venv/
+build/
+dist/
+*.egg-info/
+*.iconset/
+create_icon.py

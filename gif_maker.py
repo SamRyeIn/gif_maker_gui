@@ -4,9 +4,17 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import subprocess
 import os
+import sys
 import threading
 import shutil
 from datetime import datetime
+
+# Try to import PIL for GIF preview
+try:
+    from PIL import Image, ImageTk
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 
 
 def check_ffmpeg():
@@ -38,6 +46,16 @@ def get_image_date(filepath):
         return datetime.now().strftime("%Y%m%d")
 
 
+def format_file_size(size_bytes):
+    """Format file size in human readable format."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.2f} MB"
+
+
 def select_files():
     """Open file dialog to select multiple image files."""
     filetypes = [
@@ -65,8 +83,9 @@ def select_files():
         date_stamp = get_image_date(first_file)
         output_var.set(f"{base_name}_{date_stamp}.gif")
 
-        # Clear status
+        # Clear status and preview
         update_status("")
+        clear_preview()
 
 
 def update_scale_ui(*args):
@@ -154,14 +173,22 @@ def clear_ffmpeg_output():
     ffmpeg_text.config(state="disabled")
 
 
+def update_window_size():
+    """Update window size based on current state."""
+    base_height = 500  # Increased for preview
+    if show_ffmpeg_var.get():
+        root.geometry(f"800x{base_height + 225}")
+    else:
+        root.geometry(f"800x{base_height}")
+
+
 def toggle_ffmpeg_output(*args):
     """Show/hide the FFmpeg output frame."""
     if show_ffmpeg_var.get():
-        ffmpeg_frame.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=10, pady=(0, 10))
-        root.geometry("800x600")
+        ffmpeg_frame.grid(row=ffmpeg_row, column=0, columnspan=3, sticky="nsew", padx=10, pady=(0, 10))
     else:
         ffmpeg_frame.grid_remove()
-        root.geometry("800x375")
+    update_window_size()
 
 
 def run_ffmpeg_with_output(cmd, step_name):
@@ -193,6 +220,100 @@ def run_ffmpeg_with_output(cmd, step_name):
     return ''.join(output_lines)
 
 
+def clear_preview():
+    """Clear the GIF preview."""
+    global gif_frames, gif_animation_id
+    if gif_animation_id:
+        root.after_cancel(gif_animation_id)
+        gif_animation_id = None
+    gif_frames.clear()
+    preview_label.config(image='', text="No preview")
+    preview_info_var.set("")
+    open_button.config(state="disabled")
+    last_output_path_var.set("")
+
+
+def load_gif_preview(gif_path):
+    """Load and display animated GIF preview."""
+    global gif_frames, gif_animation_id, current_frame
+
+    if not HAS_PIL:
+        preview_label.config(text="PIL not installed\nClick 'Open GIF' to view")
+        return
+
+    try:
+        # Get file size
+        file_size = os.path.getsize(gif_path)
+        size_str = format_file_size(file_size)
+
+        # Load GIF
+        gif = Image.open(gif_path)
+        width, height = gif.size
+
+        # Calculate preview size (max 300px on either dimension)
+        max_preview = 250
+        scale = min(max_preview / width, max_preview / height, 1.0)
+        preview_width = int(width * scale)
+        preview_height = int(height * scale)
+
+        # Extract all frames
+        gif_frames.clear()
+        try:
+            while True:
+                frame = gif.copy()
+                frame = frame.resize((preview_width, preview_height), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(frame)
+                gif_frames.append(photo)
+                gif.seek(gif.tell() + 1)
+        except EOFError:
+            pass
+
+        # Get frame duration
+        try:
+            frame_duration = gif.info.get('duration', 100)
+        except:
+            frame_duration = 100
+
+        # Update info label
+        preview_info_var.set(f"{width}x{height} px  |  {len(gif_frames)} frames  |  {size_str}")
+
+        # Start animation
+        current_frame = 0
+        animate_gif(frame_duration)
+
+    except Exception as e:
+        preview_label.config(text=f"Preview error:\n{str(e)[:50]}")
+
+
+def animate_gif(duration):
+    """Animate the GIF preview."""
+    global gif_animation_id, current_frame
+
+    if gif_frames:
+        preview_label.config(image=gif_frames[current_frame], text="")
+        current_frame = (current_frame + 1) % len(gif_frames)
+        gif_animation_id = root.after(duration, lambda: animate_gif(duration))
+
+
+def open_gif():
+    """Open the generated GIF in the default viewer."""
+    path = last_output_path_var.get()
+    if path and os.path.exists(path):
+        if sys.platform == "darwin":
+            subprocess.run(["open", path])
+        elif sys.platform == "win32":
+            os.startfile(path)
+        else:
+            subprocess.run(["xdg-open", path])
+
+
+def show_preview(output_path):
+    """Show the generated GIF in the preview area."""
+    last_output_path_var.set(output_path)
+    open_button.config(state="normal")
+    load_gif_preview(output_path)
+
+
 def create_gif_thread(folder, extension, framerate, scale, output):
     """Run GIF creation in a separate thread to prevent UI freeze."""
     # Handle case-insensitive extension matching
@@ -221,8 +342,9 @@ def create_gif_thread(folder, extension, framerate, scale, output):
     output_path = os.path.join(folder, output)
 
     try:
-        # Clear previous output
+        # Clear previous output and preview
         root.after(0, clear_ffmpeg_output)
+        root.after(0, clear_preview)
 
         # Update progress - Step 1
         root.after(0, lambda: progress_var.set(0))
@@ -253,6 +375,9 @@ def create_gif_thread(folder, extension, framerate, scale, output):
         root.after(0, lambda: progress_var.set(100))
         root.after(0, lambda: update_status(f"Saved: {output_path}"))
         root.after(0, lambda: append_ffmpeg_output(f"\n{'='*50}\nComplete!\n{'='*50}\n"))
+
+        # Show preview
+        root.after(0, lambda: show_preview(output_path))
 
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr if e.stderr else str(e)
@@ -312,11 +437,14 @@ def create_gif():
 
 # Create window
 root = tk.Tk()
-root.title("GIF Maker")
-root.geometry("800x375")
+root.title("FFGIF Maker")
+root.geometry("800x500")
 
-# Storage for selected files
+# Storage for selected files and GIF animation
 selected_files = []
+gif_frames = []
+gif_animation_id = None
+current_frame = 0
 
 # Variables
 folder_var = tk.StringVar()
@@ -331,6 +459,8 @@ output_var = tk.StringVar(value="output.gif")
 progress_var = tk.DoubleVar(value=0)
 status_var = tk.StringVar(value="")
 show_ffmpeg_var = tk.BooleanVar(value=False)
+preview_info_var = tk.StringVar(value="")
+last_output_path_var = tk.StringVar(value="")
 
 # Layout
 row = 0
@@ -386,7 +516,7 @@ row += 1
 
 # Create button
 create_button = tk.Button(root, text="Create GIF", command=create_gif, width=20, height=2)
-create_button.grid(row=row, column=1, pady=20)
+create_button.grid(row=row, column=1, pady=15)
 row += 1
 
 # Progress bar
@@ -396,8 +526,34 @@ row += 1
 
 # Status label
 status_label = tk.Label(root, textvariable=status_var, wraplength=700, justify="left")
-status_label.grid(row=row, column=0, columnspan=3, padx=10, pady=(0, 10))
+status_label.grid(row=row, column=0, columnspan=3, padx=10, pady=(0, 5))
 row += 1
+
+# Preview section
+preview_frame = tk.LabelFrame(root, text="Preview", padx=10, pady=10)
+preview_frame.grid(row=row, column=0, columnspan=3, sticky="ew", padx=10, pady=5)
+
+preview_content = tk.Frame(preview_frame)
+preview_content.pack(fill="x")
+
+# Preview image on the left
+preview_label = tk.Label(preview_content, text="No preview", width=35, height=10, bg="#2a2a2a", fg="#888888")
+preview_label.pack(side="left", padx=(0, 15))
+
+# Info and button on the right
+preview_right = tk.Frame(preview_content)
+preview_right.pack(side="left", fill="both", expand=True)
+
+preview_info_label = tk.Label(preview_right, textvariable=preview_info_var, anchor="w", justify="left")
+preview_info_label.pack(anchor="w", pady=(0, 10))
+
+open_button = tk.Button(preview_right, text="Open GIF", command=open_gif, width=15, state="disabled")
+open_button.pack(anchor="w")
+
+row += 1
+
+# Remember the row for FFmpeg output
+ffmpeg_row = row
 
 # FFmpeg output frame (hidden by default)
 ffmpeg_frame = tk.Frame(root)
