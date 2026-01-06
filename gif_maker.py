@@ -17,9 +17,29 @@ except ImportError:
     HAS_PIL = False
 
 
+def find_ffmpeg():
+    """Find FFmpeg binary, checking common locations."""
+    # Check PATH first
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        return ffmpeg
+
+    # Check common macOS locations
+    common_paths = [
+        "/opt/homebrew/bin/ffmpeg",  # Apple Silicon Homebrew
+        "/usr/local/bin/ffmpeg",      # Intel Homebrew
+        "/usr/bin/ffmpeg",            # System
+    ]
+    for path in common_paths:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+
+    return None
+
+
 def check_ffmpeg():
-    """Check if FFmpeg is available in PATH."""
-    return shutil.which("ffmpeg") is not None
+    """Check if FFmpeg is available."""
+    return find_ffmpeg() is not None
 
 
 def get_image_date(filepath):
@@ -350,9 +370,13 @@ def create_gif_thread(folder, extension, framerate, scale, output):
         root.after(0, lambda: progress_var.set(0))
         root.after(0, lambda: update_status("Generating color palette..."))
 
-        # Generate palette
+        # Get FFmpeg path
+        ffmpeg_bin = find_ffmpeg()
+
+        # Generate palette (reinit_filter 0 handles variable-sized images)
         run_ffmpeg_with_output([
-            "ffmpeg", "-y", "-framerate", framerate,
+            ffmpeg_bin, "-y", "-framerate", framerate,
+            "-reinit_filter", "0",
             "-pattern_type", "glob", "-i", input_pattern,
             "-vf", f"scale={scale},palettegen=stats_mode=diff",
             palette_path
@@ -362,9 +386,10 @@ def create_gif_thread(folder, extension, framerate, scale, output):
         root.after(0, lambda: progress_var.set(50))
         root.after(0, lambda: update_status("Creating GIF..."))
 
-        # Create GIF
+        # Create GIF (reinit_filter 0 handles variable-sized images)
         run_ffmpeg_with_output([
-            "ffmpeg", "-y", "-framerate", framerate,
+            ffmpeg_bin, "-y", "-framerate", framerate,
+            "-reinit_filter", "0",
             "-pattern_type", "glob", "-i", input_pattern,
             "-i", palette_path,
             "-lavfi", f"scale={scale}[s];[s][1:v]paletteuse=dither=floyd_steinberg",
