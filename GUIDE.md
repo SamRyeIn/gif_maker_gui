@@ -6,7 +6,7 @@
 
 ## Getting Started
 
-1. **Launch the app** from `dist/FFGIF Maker.app` or run `python gif_maker.py`
+1. **Launch the app** from `dist/FFGIF Maker.app` or run `python FFGIF_Maker.py`
 2. **Select your images** using the "Select Files..." button
 3. **Adjust settings** as needed
 4. **Click "Create GIF"** and wait for processing

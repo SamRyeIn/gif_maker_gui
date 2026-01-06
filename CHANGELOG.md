@@ -72,8 +72,8 @@ A macOS GUI application for creating high-quality GIFs from image sequences usin
 ## File Structure
 
 ```
-gif_maker_gui/
-├── gif_maker.py          # Main application
+FFGIF Maker/
+├── FFGIF_Maker.py        # Main application
 ├── setup.py              # py2app build configuration
 ├── FFGIF Maker.icns      # macOS app icon
 ├── icon.png              # Source icon image
@@ -95,7 +95,7 @@ gif_maker_gui/
 ### Running from Source
 ```bash
 source venv/bin/activate
-python gif_maker.py
+python FFGIF_Maker.py
 ```
 
 ### Building the App

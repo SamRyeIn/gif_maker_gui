@@ -25,7 +25,7 @@ cd "FFGIF Maker"
 python3 -m venv venv
 source venv/bin/activate
 pip install Pillow
-python gif_maker.py
+python FFGIF_Maker.py
 ```
 
 ### Requirements

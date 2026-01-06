@@ -10,7 +10,7 @@ The app will be created in the 'dist' folder.
 
 from setuptools import setup
 
-APP = ['gif_maker.py']
+APP = ['FFGIF_Maker.py']
 DATA_FILES = []
 OPTIONS = {
     'argv_emulation': False,
